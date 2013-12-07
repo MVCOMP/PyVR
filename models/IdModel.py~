@@ -1,0 +1,126 @@
+#! /usr/bin/env python
+# encoding: utf-8
+
+import numpy
+from sklearn.mixture import GMM
+from ModGmm import modifiedGMM
+from sklearn import preprocessing
+
+class IdModelException(Exception):
+    def __init__(self, message, Errors):
+        self.Errors = Errors
+
+class IdModel():
+    
+    def __init__(self,trained_model=[]):
+        self.trained_model = trained_model
+        self.ids = set()
+        self.attr = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,19,20,21,25,40,43]
+
+    def trainFromStorage(self, storage):
+        ids = storage.getAllIds()
+        for k in ids.keys():
+            obs = ids[k][:,self.attr]
+            normalizer = preprocessing.Normalizer().fit(obs)
+            obs = normalizer.transform(obs)
+            
+            print "Generating GMM for %s" % k
+
+            '''
+            # Bayesian Information Criteria (BIC)
+            
+            best_gmm = None
+            
+            lowest_bic = numpy.infty
+            best_n = 0
+            n_components_range = range(2,7)
+            #for covariance_type in ('full','diag'):
+            
+            for n_components in n_components_range:
+                # Estimate model parameters with the expectation-maximization algorithm.
+                gmm = modifiedGMM(n_components,'diag')
+                gmm.fit(obs)
+                # Bayesian information criterion for
+                # the current model fit and the proposed data
+                bic = gmm.bic(obs)
+                if bic < lowest_bic:
+                    lowest_bic = bic
+                    best_gmm = gmm
+                    best_n = n_components
+            
+            print "%i components" % best_n
+                        
+            best_gmm['id'] = k
+            self.trained_model.append(best_gmm)
+            
+            '''            
+            gmm = modifiedGMM(5)
+            gmm.fit(obs)
+            gmm['id'] = k
+            gmm['normalizer'] = normalizer
+            
+            self.trained_model.append(gmm)
+            
+    
+        return True
+    
+    def verify(self,speakerX,id):
+        obs = speakerX.getObs(self.attr)
+	ubm = numpy.mean([gmm.loglikelihood(gmm['normalizer'].transform(obs)) for gmm in self.trained_model if gmm["id"] != id ])
+	p = numpy.mean([gmm.loglikelihood(gmm['normalizer'].transform(obs)) for gmm in self.trained_model if gmm["id"] == id ])
+	return p - ubm
+
+    def getOrderedList(self,speakerX):
+        r = [(gmm,numpy.sum(gmm.score(gmm['normalizer'].transform(speakerX)))) for gmm in self.trained_model]
+        r.sort(key=lambda ld: ld[1])
+        r.reverse()
+        return r[:10]
+    
+
+
+    def test(self,speakerX):
+        obs = speakerX.getObs(self.attr)
+        labeled_distances = self.getOrderedList(obs)
+        nearest_model = labeled_distances[0][0] # GMM instance
+        value = nearest_model["id"]
+        #data1 = nearest_model.score(nearest_model['normalizer'].transform(obs))
+
+	'''
+	ubm = numpy.mean([self.loglikelihood(obs,labeled_distances[i+1][0]) for i in range(len(labeled_distances)-1)])
+	print self.loglikelihood(obs,nearest_model) - ubm
+	'''
+
+	N = min(len(labeled_distances)-1,10)
+	ubm = numpy.mean([labeled_distances[i+1][0].loglikelihood(obs) for i in range(N)])
+	score = nearest_model.loglikelihood(obs) - ubm
+
+
+
+	#ubm2 = numpy.mean([labeled_distances[i+2][0].loglikelihood(obs) for i in range(10)])
+	l = [labeled_distances[i+2][0].loglikelihood(obs) for i in range(N-1)]
+	l.append(nearest_model.loglikelihood(obs))
+	ubm2 = numpy.mean(l)
+	score2 = labeled_distances[1][0].loglikelihood(obs) -ubm2
+	print score,score2
+
+
+        '''
+        predictions = nearest_model.predict(obs)
+        print predictions
+        '''
+        
+        '''
+        # GMM instance of the 2rd most probable speaker
+        model2 = labeled_distances[1][0]
+        data2 = model2.score(obs)
+        
+        # GMM instance of the 3rd most probable speaker
+        model3 = labeled_distances[2][0]
+        data3 = model3.score(obs)
+        
+        score = numpy.exp(-(numpy.mean(data2)-numpy.mean(data3))/numpy.mean([numpy.mean(data1)-numpy.mean(data2),numpy.mean(data1)-numpy.mean(data3)]))
+        '''
+        #score = numpy.mean(data1)
+        return value,score
+    
+
